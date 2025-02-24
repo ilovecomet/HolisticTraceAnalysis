@@ -14,7 +14,7 @@ from hta.configs.event_args_yaml_parser import (
 
 class ParserBackend(str, Enum):
     """Tracer parser and loader backend
-    See https://github.com/facebookresearch/HolisticTraceAnalysis/pull/125
+    See https://github.com/facebookresearch/HolisticTraceAnalysis/pull/110
     for details on performance and memory usage.
     """
 

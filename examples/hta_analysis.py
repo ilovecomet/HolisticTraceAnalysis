@@ -37,7 +37,7 @@ def get_trace_dir(log_dir):
     trace_dirs = []
     for root, dirs, files in os.walk(log_dir):
         for dir_name in dirs:
-            if dir_name != "pt_log":
+            if dir_name != "tensorboard":
                 continue
             subdir_path = os.path.join(root, dir_name)
             trace_dirs.append(subdir_path)
