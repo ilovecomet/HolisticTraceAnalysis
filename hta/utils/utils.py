@@ -53,7 +53,7 @@ def normalize_path(path: str) -> str:
     return normalized_path
 
 
-NCCL_KERNEL_RE = re.compile(r"^nccl.*Kernel")
+NCCL_KERNEL_RE = re.compile(r"(^nccl.*Kernel)|(.*dpsk::ep::)")
 
 
 def is_comm_kernel(name: str) -> bool:
@@ -85,7 +85,7 @@ def is_memory_kernel(name: str) -> bool:
     return MEMORY_KERNEL_RE.match(name) is not None
 
 
-NCCL_COMPUTE_KERNEL_RE = re.compile(r"(^nccl.*Kernel)|(.*(Memcpy)|(Memset))|(.*Sync)")
+NCCL_COMPUTE_KERNEL_RE = re.compile(r"(^nccl.*Kernel)|(.*(Memcpy)|(Memset))|(.*Sync)|(.*dpsk::ep::)")
 
 
 def is_compute_kernel(name: str) -> bool:
