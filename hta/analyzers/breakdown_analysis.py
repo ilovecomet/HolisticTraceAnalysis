@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
-from hta.common.trace_filter import GPUKernelFilter
+from hta.common.trace_filter import GPUKernelFilter, CPUOperatorFilter
 from hta.common.trace_symbol_table import decode_symbol_id_to_symbol_name
 
 from hta.configs.config import logger
@@ -885,3 +885,213 @@ class BreakdownAnalysis:
         ].round(2)
 
         return result_df, interval_stats_df
+
+    @classmethod
+    def _get_user_anno_interval_dataframe(
+            cls,
+            trace_df: pd.DataFrame,
+            t: "Trace",
+    ) -> Optional[pd.DataFrame]:
+        """Obtains all user annotations in the trace dataframe and assigns them
+        an interval index that can be used for analyzing overlap.
+            @args: trace_df (pd.DataFrame) : trace df for specific rank
+                Please make sure this includes "end" column.
+            @args: t (Trace) : trace object
+
+        Returns: pd.DataFrame with GPU kernels subset with an interval index
+                of [start, end) intervals.
+                None if the trace does not have user annotations.
+        """
+        sym_id_map = t.symbol_table.get_sym_id_map()
+        if (user_anno_id := sym_id_map.get("user_annotation", -1)) == -1:
+            return None
+
+        # Reverse sort annotations by duration. This order will ensure the leaf/bottom of
+        # the stack is always processed last.
+        user_anno_df = trace_df[trace_df.cat == user_anno_id][
+            ["pid", "tid", "ts", "end", "dur", "name"]
+        ].sort_values("dur", ascending=False)
+
+        user_anno_df.set_index(
+            pd.IntervalIndex.from_arrays(
+                user_anno_df["ts"], user_anno_df["end"], closed="left"
+            ),
+            inplace=True,
+        )
+        return user_anno_df
+
+    @classmethod
+    def _get_launch_comm_kernel_interval_dataframe(
+            cls,
+            trace_df: pd.DataFrame,
+            t: "Trace",
+    ) -> (pd.DataFrame, pd.DataFrame, pd.DataFrame):
+        """获取所有launch通信算子的
+        Obtains all launch comm kernels in the trace dataframe and assigns them
+        an interval index that can be used for analyzing overlap.
+            @args: trace_df (pd.DataFrame) : trace df for specific rank
+                Please make sure this includes "end" column.
+            @args: t (Trace) : trace object
+
+        Returns: pd.DataFrame with GPU kernels subset with an interval index
+                of [start, end) intervals.
+        """
+        sym_table = t.symbol_table.get_sym_table()
+        gpu_kernels_df = GPUKernelFilter()(trace_df, t.symbol_table).copy()
+        gpu_kernels_df["kernel_type"] = gpu_kernels_df[["name"]].apply(
+            lambda x: get_kernel_type(sym_table[x["name"]]), axis=1
+        )
+        cpu_kernels_df = CPUOperatorFilter()(trace_df, t.symbol_table).copy()
+        comm_kernels = gpu_kernels_df[gpu_kernels_df["kernel_type"].eq(KernelType.COMMUNICATION.name)].copy()
+        comp_kernels = gpu_kernels_df[gpu_kernels_df["kernel_type"].eq(KernelType.COMPUTATION.name)].copy()
+        launch_comm_kernels = cpu_kernels_df.merge(comm_kernels["correlation"], on="correlation", how="inner")
+        launch_comm_kernels.set_index(
+            pd.IntervalIndex.from_arrays(
+                launch_comm_kernels["ts"], launch_comm_kernels["end"], closed="left"
+            ),
+            inplace=True
+        )
+        return launch_comm_kernels, comm_kernels, comp_kernels
+
+    @classmethod
+    def _associate_kernels_with_user_annotations(
+            cls,
+            trace_df: pd.DataFrame,
+            kernels_df: pd.DataFrame,
+            user_anno_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+        """Assigns each gpu_kernel  user annotation. If the kernel overlaps with multiple
+        user annotations, we will pick the lowest/leaf annotation in the stack to attribute to.
+            @args: trace_df (pd.DataFrame) : trace df for specific rank
+                Please make sure this includes "end" column.
+            @args: gpu_kernels_df (pd.DataFrame) : kernel df with interval index.
+            @args: gpu_user_anno_df (pd.DataFrame) : gpu user annotation df with interval index.
+        """
+        # Get the pid tid combinations to scan over
+        pid_tids = user_anno_df[["pid", "tid"]].drop_duplicates().to_dict("records")
+
+        # 初始化一个新的数据框来存储结果
+        new_kernels_df = pd.DataFrame()
+
+        for p in pid_tids:
+            pid, tid = p["pid"], p["tid"]
+            user_anno_df_filt = user_anno_df.query(
+                f"pid == {pid} and tid == {tid}"
+            )
+            logger.info(
+                f"Pid,tid = {p}, Num gpu annotations = {len(user_anno_df_filt)}"
+            )
+
+            # Loop over all GPU user annotation intervals and match them with GPU
+            # kernel intervals. This will be efficient if len(user annotations) << len(kernels)
+            for row in user_anno_df_filt.itertuples():
+                interval, anno_name = row.Index, row.name
+                overlaps = kernels_df.index.overlaps(interval)
+                # 选择符合条件的行
+                matching_rows = kernels_df.loc[
+                    (kernels_df["pid"] == pid)
+                    & (kernels_df["tid"] == tid)
+                    & overlaps,
+                ]
+
+                # 复制这些行并添加到 new_kernels_df
+                if not matching_rows.empty:
+                    # 为每个匹配的行添加注释
+                    matching_rows = matching_rows.copy()
+                    matching_rows['user_annotation'] = anno_name
+                    new_kernels_df = pd.concat([new_kernels_df, matching_rows])
+        return new_kernels_df
+
+    @classmethod
+    def _get_no_overlap_comm_kernels(
+            cls,
+            comm_df: pd.DataFrame,
+            comp_df: pd.DataFrame,
+    ) -> pd.DataFrame:
+
+        def calculate_non_overlap_length(ts, te, merged_intervals):
+            """
+            计算区间 [ts, te] 与合并后的区间列表的不交叠长度
+            :param ts: 区间开始时间
+            :param te: 区间结束时间
+            :param merged_intervals: 合并后的区间列表，每个元素是 [ts, te]
+            :return: 不交叠的长度
+            """
+            # 初始化不交叠的长度为整个区间的长度
+            non_overlap_length = te - ts
+
+            # 遍历合并后的区间列表
+            for merged_ts, merged_te in merged_intervals:
+                # 计算交叠部分
+                overlap_start = max(ts, merged_ts)
+                overlap_end = min(te, merged_te)
+                overlap_length = max(0, overlap_end - overlap_start)
+
+                # 减去交叠部分的长度
+                non_overlap_length -= overlap_length
+
+            # 确保不交叠长度非负
+            return max(0, non_overlap_length)
+
+        comp_kernel_intervals = merge_kernel_intervals(comp_df).values.tolist()
+
+        # 初始化一个列表，用于存储不交叠长度
+        non_overlap_lengths = []
+
+        # 遍历 comm_df 中的每一行
+        for _, row in comm_df.iterrows():
+            ts = row['ts']
+            te = row['end']
+            # 计算不交叠长度
+            non_overlap_length = calculate_non_overlap_length(ts, te, comp_kernel_intervals)
+            # 将结果添加到列表中
+            non_overlap_lengths.append(non_overlap_length)
+
+        # 将不交叠长度添加到 comm_df 中
+        comm_df["dur_ori"] = comm_df["dur"]
+        comm_df['dur'] = non_overlap_lengths
+        return comm_df
+
+    @classmethod
+    def get_launch_comm_kernels_with_user_annotations(
+            cls,
+            t: "Trace",
+            rank: int,
+            expand_names: bool = True,
+            shortern_names: bool = True,
+            no_overlap: bool = True,
+    ) -> Optional[pd.DataFrame]:
+        """Returns a dataframe of all GPU kernels and associates them to closest or leaf
+        GPU user annotation. If the kernel overlaps with multiple user annotations,
+        we will pick the lowest/leaf annotation in the stack to attribute to.
+        Read more in get_gpu_kernels_with_user_annotations in hta/trace_analysis.py."""
+        trace_df = t.get_trace(rank)
+        trace_df["end"] = trace_df["ts"] + trace_df["dur"]
+        trace_df["user_annotation"] = -1
+
+        #获取user_annotation
+        user_anno_df = cls._get_user_anno_interval_dataframe(trace_df, t)
+        if user_anno_df is None:
+            logger.warning(
+                f"Trace for rank {rank} does not contain any user annotations"
+            )
+            return None
+
+        launch_comm_kernels_df, comm_kernels, comp_kernels = cls._get_launch_comm_kernel_interval_dataframe(trace_df, t)
+
+        launch_comm_user_anno_df = cls._associate_kernels_with_user_annotations(
+            trace_df, launch_comm_kernels_df, user_anno_df
+        )
+
+        if no_overlap:
+            comm_kernels = cls._get_no_overlap_comm_kernels(comm_kernels, comp_kernels)
+
+        # 合并两个数据框
+        merged_df = pd.merge(comm_kernels, launch_comm_user_anno_df, on='correlation', how='left', suffixes=('_gpu', '_cpu'))
+
+        if expand_names:
+            decode_symbol_id_to_symbol_name(
+                merged_df, t.symbol_table, shortern_names
+            )
+
+        return merged_df

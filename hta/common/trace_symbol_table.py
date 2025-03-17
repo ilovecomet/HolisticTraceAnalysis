@@ -168,3 +168,7 @@ def decode_symbol_id_to_symbol_name(
         df["s_cat"] = df["cat"].apply(lambda idx: get_sym(idx))
     if "user_annotation" in df.columns and df["user_annotation"].dtype.kind == "i":
         df["s_user_annotation"] = df["user_annotation"].apply(lambda idx: get_sym(idx))
+
+    for col_name in ["name_cpu", "name_gpu", "cat_cpu", "cat_gpu", "user_annotation_cpu", "user_annotation_gpu"]:
+        if col_name in df.columns and df[col_name].dtype.kind == "i":
+            df["s_{}".format(col_name)] = df[col_name].apply(lambda idx: get_sym(idx))

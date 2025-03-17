@@ -726,3 +726,35 @@ class TraceAnalysis:
             only_show_critical_events,
             show_all_edges,
         )
+
+    def get_launch_comm_kernels_with_user_annotations(
+        self,
+        rank: int,
+        expand_names: bool = True,
+        shortern_names: bool = True,
+        no_overlap: bool = True,
+    ) -> Optional[pd.DataFrame]:
+        r"""
+        Provides a complete dataframe of GPU kernels and matches them to the corresponding user annotation i.e. user provided training phase. The output is a dataframe with all GPU kernel data alongside a "user_annotation" column.
+
+        Args:
+            rank (int): Specify rank to return GPU kernels for.
+            expand_names (bool): Expand integer name value to full names. This will add
+                the columns "s_name" and "s_user_annotation" to the dataframe.
+            shortern_names (bool): When expand_names is True, this flag enables shortening
+                large CUDA kernel names. This works by removing the '<' template parameters etc.
+
+        Returns:
+            pd.Dataframe:
+                The returned dataframe has all trace columns along with "user_annotation",
+                and optionally "s_user_annotation" column if expand_names=True.
+
+        Note: This API is per rank, and does not have any visualization aspect.
+        """
+        return BreakdownAnalysis.get_launch_comm_kernels_with_user_annotations(
+            self.t,
+            rank,
+            expand_names,
+            shortern_names,
+            no_overlap,
+        )

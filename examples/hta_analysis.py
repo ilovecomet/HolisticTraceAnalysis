@@ -37,7 +37,7 @@ def get_trace_dir(log_dir):
     trace_dirs = []
     for root, dirs, files in os.walk(log_dir):
         for dir_name in dirs:
-            if dir_name != "tensorboard":
+            if '2025.03.07' not in dir_name: #"pt_log" "tensorboard"
                 continue
             subdir_path = os.path.join(root, dir_name)
             trace_dirs.append(subdir_path)
@@ -45,10 +45,17 @@ def get_trace_dir(log_dir):
 
 if __name__ == "__main__":
     log_dir = sys.argv[1]
-    with open(os.path.join(log_dir, "hta_analysis_res"), "a") as fo:
-        for trace_dir in get_trace_dir(log_dir):
+    with open(os.path.join("./", "hta_analysis_res"), "a") as fo:
+        trace_dirs = get_trace_dir(log_dir)
+        if len(trace_dirs) == 0:
+            trace_dirs.append(log_dir)
+        for trace_dir in trace_dirs:
+            print("trace_dir:{}".format(trace_dir))
             start_time = time.time()
-            res_dict = hta_analysis(trace_dir)
+            try:
+                res_dict = hta_analysis(trace_dir)
+            except:
+                continue
             res_dict["used_time_sec"] = time.time()-start_time
             res_dict["trace_dir"] = trace_dir
             fo.write("{}\n".format(json.dumps(res_dict)))
