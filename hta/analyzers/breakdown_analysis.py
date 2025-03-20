@@ -1,10 +1,11 @@
 # Copyright (c) Meta Platforms, Inc. and affiliates.
 # This source code is licensed under the MIT license found in the
 # LICENSE file in the root directory of this source tree.
-
+import json
 from collections import defaultdict
 from typing import Dict, List, Optional, Tuple, TYPE_CHECKING
 
+import numpy as np
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -1095,3 +1096,80 @@ class BreakdownAnalysis:
             )
 
         return merged_df
+
+    @classmethod
+    def _aggregate_comm_matrices(
+            cls,
+            comm_kernel_dict : Dict[int, pd.DataFrame]
+    ) -> pd.DataFrame:
+        """将all_to_all通信数据聚合"""
+
+        # 用于存储每个索引对应的矩阵
+        result_dict = {"index": [], "comm_matrix": [], "rx_group": [], "tx_group": []}
+
+        for idx in comm_kernel_dict[0].index:
+            row_vectors = []
+            col_vectors = []
+            rx_vectors = []
+            tx_vectors = []
+
+            # 从所有 DataFrame 提取数据
+            data_check = False
+            for i in range(len(comm_kernel_dict)):
+                df = comm_kernel_dict[i]
+                if idx not in df.index:
+                    data_check=True
+                    continue
+                row_vectors.append(df.at[idx, 'in_split_size_gpu'])
+                col_vectors.append(df.at[idx, 'out_split_size_gpu'])
+                rx_vectors.append(df.at[idx, 'RX'])
+                tx_vectors.append(df.at[idx, 'TX'])
+            if data_check:
+                continue
+
+            # 计算矩阵大小
+            max_len = max(max(len(rv) for rv in row_vectors), max(len(cv) for cv in col_vectors))
+            if max_len == 0:
+                continue
+            # 初始化矩阵
+            matrix = np.zeros((max_len, max_len))
+            # 填充矩阵
+            for i, (rv, cv) in enumerate(zip(row_vectors, col_vectors)):
+                row_len = len(rv)
+                col_len = len(cv)
+                matrix[i, :col_len] = cv
+                matrix[:row_len, i] = rv
+            result_dict["index"].append(idx)
+            result_dict["comm_matrix"].append(matrix)
+            result_dict["rx_group"].append(rx_vectors)
+            result_dict["tx_group"].append(tx_vectors)
+
+        # 创建返回的DataFrame
+        result_df = pd.DataFrame(result_dict).set_index('index')
+        # 数据同时放在rank0的数据里
+        comm_kernel_dict[0] = comm_kernel_dict[0].join(result_df, how="left")
+        return result_df
+
+    @classmethod
+    def get_all_to_all_comm_kernels_info(
+            cls,
+            t: "Trace",
+            user_annotation: str = "nccl:all_to_all"
+    ) -> (pd.DataFrame, Dict[int, pd.DataFrame]):
+        comm_kernel_dict = {}
+        for rank in t.traces:
+            comm_kernel_dict[rank] = cls.get_launch_comm_kernels_with_user_annotations(
+                t,
+                rank,
+                no_overlap = False
+            )
+            comm_kernel_dict[rank]["RX"] = comm_kernel_dict[rank]["in_msg_nelems_gpu"] * 2 / comm_kernel_dict[rank]["dur_gpu"] / 1000
+            comm_kernel_dict[rank]["TX"] = comm_kernel_dict[rank]["out_msg_nelems_gpu"] * 2 / comm_kernel_dict[rank]["dur_gpu"] / 1000
+            comm_kernel_dict[rank]['in_split_size_gpu'] = comm_kernel_dict[rank]['in_split_size_gpu'].apply(json.loads)
+            comm_kernel_dict[rank]['out_split_size_gpu'] = comm_kernel_dict[rank]['out_split_size_gpu'].apply(json.loads)
+            comm_kernel_dict[rank] = comm_kernel_dict[rank][
+                comm_kernel_dict[rank]['s_user_annotation_cpu'] == user_annotation
+                ].sort_values(by='ts_gpu').reset_index(drop=True)
+            comm_kernel_dict[rank] = comm_kernel_dict[rank][(comm_kernel_dict[rank]['collective_name_gpu'].str.contains('all_to_all', na=False))]
+        result = cls._aggregate_comm_matrices(comm_kernel_dict)
+        return result, comm_kernel_dict

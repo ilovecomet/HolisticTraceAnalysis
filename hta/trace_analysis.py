@@ -758,3 +758,12 @@ class TraceAnalysis:
             shortern_names,
             no_overlap,
         )
+
+    def get_all_to_all_comm_kernels_info(
+            self,
+            user_annotation: str = "nccl:all_to_all"
+    ) -> (pd.DataFrame, Dict[int, pd.DataFrame]):
+        return BreakdownAnalysis.get_all_to_all_comm_kernels_info(
+            self.t,
+            user_annotation = user_annotation
+        )

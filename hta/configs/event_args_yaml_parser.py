@@ -73,6 +73,7 @@ ARGS_DEFAULT_FUNC: Callable[[Dict[str, AttributeSpec]], List[AttributeSpec]] = (
         + ARGS_BANDWIDTH_FUNC(available_args)
         + ARGS_SYNC_FUNC(available_args)
         + ARGS_INPUT_SHAPE_FUNC(available_args)
+        + ARGS_COMMUNICATION_FUNC(available_args)
         + [available_args["index::external_id"]]
     )
 )
