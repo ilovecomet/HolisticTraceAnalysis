@@ -16,6 +16,7 @@ from hta.analyzers.cupti_counter_analysis import CuptiCounterAnalysis
 from hta.analyzers.straggler import find_stragglers_with_late_start_comm_kernels
 from hta.analyzers.straggler_analysis import StragglerAnalysis
 from hta.analyzers.trace_counters import TraceCounters
+from hta.analyzers.forward_stage_analysis import ForwardStageAnalysis
 from hta.common.constants import CUDA_MAX_LAUNCH_QUEUE_PER_STREAM
 from hta.common.trace import Trace
 from hta.configs.config import logger
@@ -767,3 +768,17 @@ class TraceAnalysis:
             self.t,
             user_annotation = user_annotation
         )
+
+
+    def get_forward_compute_stage_analysis(self, visualize: bool = True) -> pd.DataFrame:
+        r"""
+        Compute the forward stage overlap percentage for each rank.
+
+        Args:
+            visualize (bool): Set to True to display the graph. Default = True.
+
+        Returns:
+            pd.DataFrame
+                A dataframe containing the noncomputation computation overlap percentage for each rank.
+        """
+        return ForwardStageAnalysis.get_forward_compute_stage_analysis(self.t, visualize)
