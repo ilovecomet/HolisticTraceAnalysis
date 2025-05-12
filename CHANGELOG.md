@@ -5,6 +5,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 #### Added
+- Added support for AMD GPUs.
 - Update pyproject.toml to workaround missing stub packages for yaml.
 - Add trace format validator
 - Added multiple trace filter classes and demos.
@@ -21,6 +22,7 @@ Versioning](https://semver.org/spec/v2.0.0.html).
 - Queue length analysis: Add feature to compute time blocked on a stream hitting max queue length.
 - Add `kernel_backend` to parser config for Triton / torch.compile() support.
 - Add analyses features for GPU user annotation attribution at trace and kernel level.
+- Add support to parse all trace event args.
 
 #### Changed
 - Change test data path in unittests from relative path to real path to support running test within IDEs.
