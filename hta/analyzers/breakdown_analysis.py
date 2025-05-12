@@ -1320,7 +1320,7 @@ class BreakdownAnalysis:
         ).index.tolist()
 
         # 合并固定列和排序后的剩余列
-        sorted_columns = fixed_columns + sorted_remaining
+        sorted_columns = [col for col in fixed_columns if col in pivot_result.columns] + sorted_remaining
 
         # 按新列顺序重组 DataFrame
         pivot_result = pivot_result[sorted_columns]
