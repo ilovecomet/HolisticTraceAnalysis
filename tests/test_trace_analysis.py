@@ -119,6 +119,20 @@ class TraceAnalysisTestCase(unittest.TestCase):
         )
         self.assertTrue(frequent_patterns_dfs.empty)
 
+    def test_get_mtia_aten_op_kernels_and_delay_inference_single_rank(self):
+        dataframe_list = self.mtia_single_rank_trace_t.get_aten_op_kernels_and_delay(
+            sort_by=["occurrence_count", "avg_aten_op_launch_delay"]
+        )
+        rank_0_df = dataframe_list[0]
+        row = rank_0_df.iloc[0]
+        self.assertEqual(row["kernel_sequence"], "customized_fba_mul_const-dtype_Float")
+        self.assertEqual(row["aten_op_name"], "aten::mul")
+        self.assertEqual(row["occurrence_count"].item(), 822)
+        self.assertAlmostEqual(
+            row["avg_aten_op_launch_delay"].item(), 1092.545, delta=2.0
+        )
+        self.assertAlmostEqual(row["avg_runtime_delay"].item(), 293.113, delta=2.0)
+
     def test_get_cuda_kernel_launch_stats_training_multiple_ranks(self):
         dataframe_dict = self.vision_transformer_t.get_cuda_kernel_launch_stats(
             ranks=[1, 7], visualize=False
@@ -345,6 +359,21 @@ class TraceAnalysisTestCase(unittest.TestCase):
         self.__test_gpu_user_annotation_common(
             use_gpu_annotation=False, expected_rows=12
         )
+
+    def test_cpu_user_annotation_breakdown_with_allowlist(self):
+        """Test the allowlist mode"""
+        analyzer = self.ns_resolution_t
+        allowlist_patterns = ["Optimizer"]
+
+        cpu_user_anno_df = analyzer.get_gpu_user_annotation_breakdown(
+            visualize=False,
+            num_kernels=5,
+            use_gpu_annotation=False,
+            allowlist_patterns=allowlist_patterns,
+        )
+        # Expect 8 rows, 5 original + 2 for Optimizer + 1 others
+        self.assertEqual(len(cpu_user_anno_df), 8)
+        self.assertEqual(int(cpu_user_anno_df.name.str.contains("Optimizer").sum()), 2)
 
     def test_get_gpu_kernels_with_user_annotations(self):
         gpu_kernels_df = self.ns_resolution_t.get_gpu_kernels_with_user_annotations(

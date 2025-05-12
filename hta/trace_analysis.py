@@ -192,6 +192,7 @@ class TraceAnalysis:
         visualize: bool = True,
         duration_ratio: float = 0.8,
         num_kernels: int = 1000,
+        allowlist_patterns: Optional[List[str]] = None,
         image_renderer: Optional[str] = None,
     ) -> Optional[pd.DataFrame]:
         r"""
@@ -206,6 +207,7 @@ class TraceAnalysis:
             duration_ratio (float): Floating point value between 0 and 1 specifying the ratio of time taken
                                     by top user annotations. Default = 0.8.
             num_kernels (int): Maximum number of user annotations to show. Default = 1000. Rest get grouped into "other".
+            allowlist_patterns (list(str)): if user annotations match any of the patterns in this list, they will not be aggregated into "other" catgory. This argument is meant to keep some events as distinct in the aggregation. Supports strings as well as regular expressions.
             image_renderer (str): Set to ``notebook`` when using jupyter and ``jupyterlab`` when using jupyter-lab.
                 To see all available options execute: ``import plotly; plotly.io.renderers`` in a python shell.
 
@@ -224,6 +226,7 @@ class TraceAnalysis:
             visualize,
             duration_ratio,
             num_kernels,
+            allowlist_patterns,
             image_renderer,
         )
 
@@ -287,6 +290,37 @@ class TraceAnalysis:
             visualize,
             compress_other_kernels,
         )
+
+    def get_aten_op_kernels_and_delay(
+        self,
+        ranks: Optional[List[int]] = None,
+        sort_by: Optional[List[str]] = None,
+    ) -> Dict[int, pd.DataFrame]:
+        r"""
+        For each aten operator, this function finds the corresponding  kernels and the delay
+        between the aten operator and the first  kernel launch. The delay is measured in microseconds
+        (us). The delay is calculated as the difference between the start time of the aten operator
+        and the start time of the firs  kernel launch. The output is a table with the following columns:
+        Aten operator name, kernels associated with the aten operator, number of such aten op to kernel sequences,
+        delay between the aten operator and runtime launch of the first kernel, and the delay between the runtime
+        kernel launch to kernel execution on device.
+
+        Args:
+            ranks: the rank numbers on which the analysis was performed on
+            sort_by: the column name to sort the results by, default is "occurrence_count"
+
+        Returns:
+            Dict[int, pd.DataFrame]: The function returns a dictionary of dataframes. The key corresponds to the rank
+            and value is the DataFrame containing the path of kernels launch by aten op, the count number of each path,
+            the aten op launch delay and runtime delay.
+        """
+        if ranks is None:
+            ranks = [0]
+
+        if sort_by is None:
+            sort_by = ["occurrence_count"]
+
+        return CudaKernelAnalysis.get_aten_op_kernels_and_delay(self.t, ranks, sort_by)
 
     def get_cuda_kernel_launch_stats(
         self,
