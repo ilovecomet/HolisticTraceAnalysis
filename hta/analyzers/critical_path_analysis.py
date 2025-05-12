@@ -1166,7 +1166,7 @@ class CPGraph(nx.DiGraph):
         for n in self.nodes:
             node = self.node_list[n]
             logger.info(f"node id = {n}, node = {node}")
-            logger.info("  neighbors = ", ",".join((str(n) for n in self.neighbors(n))))
+            logger.info("  neighbors = %s", ",".join((str(n) for n in self.neighbors(n))))
 
     def critical_path(self) -> bool:
         """Calculates the critical path across nodes"""

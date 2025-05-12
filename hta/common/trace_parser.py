@@ -322,12 +322,16 @@ def round_down_time_stamps(df: pd.DataFrame) -> None:
         f" ts dtype = {df['ts'].dtype}, dur dtype = {df['dur'].dtype}."
         f"Please see https://github.com/pytorch/pytorch/pull/122425"
     )
-    # Don't floor directly, first find the end
-    df["end"] = df["ts"] + df["dur"]
 
-    df["ts"] = df[~df["ts"].isnull()]["ts"].apply(lambda x: math.ceil(x))
-    df["end"] = df[~df["end"].isnull()]["end"].apply(lambda x: math.floor(x))
-    df["dur"] = df["end"] - df["ts"]
+    df["ts"] = df[~df["ts"].isnull()]["ts"].apply(lambda x: int(x*1e3))
+    df["dur"] = df[~df["dur"].isnull()]["dur"].apply(lambda x: int(x * 1e3))
+    df["end"] = df["ts"] + df["dur"]
+    # Don't floor directly, first find the end
+    # df["end"] = df["ts"] + df["dur"]
+    #
+    # df["ts"] = df[~df["ts"].isnull()]["ts"].apply(lambda x: math.ceil(x))
+    # df["end"] = df[~df["end"].isnull()]["end"].apply(lambda x: math.floor(x))
+    # df["dur"] = df["end"] - df["ts"]
 
 
 # @profile

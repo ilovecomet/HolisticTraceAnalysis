@@ -1173,3 +1173,124 @@ class BreakdownAnalysis:
             comm_kernel_dict[rank] = comm_kernel_dict[rank][(comm_kernel_dict[rank]['collective_name_gpu'].str.contains('all_to_all', na=False))]
         result = cls._aggregate_comm_matrices(comm_kernel_dict)
         return result, comm_kernel_dict
+
+    @classmethod
+    def get_user_annotation_temporal_breakdown(
+            cls,
+            t: "Trace",
+    ) -> (pd.DataFrame, pd.DataFrame):
+        for rank in t.traces:
+            decode_symbol_id_to_symbol_name(t.traces[rank], t.symbol_table, True)
+
+        def process_df(df, rank):
+            return (
+                df[df['s_cat'] == 'user_annotation']
+                .assign(is_same=lambda x: x['tid'] == x['pid'])
+                .groupby(['s_name', 'is_same'], as_index=False)
+                .agg({'dur': lambda x: x.sum() / 1e6})
+                .rename(columns={'dur': 'total_dur'})
+                .assign(
+                    combined=lambda x: np.where(x['is_same'], x['s_name'], 'backward_' + x['s_name']),
+                    rank=rank  # 添加 rank 列
+                )
+                .sort_values(['s_name', 'total_dur'], ascending=[True, False])
+            )
+
+        # 处理所有 DataFrame 并合并结果
+        result = pd.concat(
+            [process_df(df, rank) for rank, df in t.traces.items()],
+            ignore_index=True
+        ).sort_values(['rank', 'combined', 'total_dur'], ascending=[True, False, False])
+
+        # 创建数据透视表
+        pivot_result = result.pivot(
+            index='rank',  # 行索引为 rank
+            columns='combined',  # 列名为 combined 的值
+            values='total_dur'  # 填充值为 total_dur
+        ).reset_index()  # 将 rank 从索引恢复为列
+
+        # （可选）填充缺失值为 0
+        pivot_result = pivot_result.fillna(0)
+
+        # 计算平均值行（排除 rank 列）
+        avg_row = pivot_result.drop(columns=['rank']).mean()
+
+        # 创建新行 DataFrame，并添加 rank 列标识
+        avg_row_df = pd.DataFrame([avg_row], index=[len(pivot_result)])
+        avg_row_df['rank'] = 'Average'
+
+        # 合并到原始 DataFrame
+        pivot_result = pd.concat([pivot_result, avg_row_df], ignore_index=True)
+
+        # 定义需要固定在前面的列名（按你需要的顺序排列）
+        fixed_columns = [
+            "rank",
+            "ProfilerStep#95",
+            "full_iteration",
+            "forward_compute",
+            "backward_compute",
+            "optimizer_step",
+            "forward_data_process",
+            "forward_model_compute",
+            "forward_loss_compute",
+            "mla_forward",
+            "moe_routing",
+            "moe_token_perm",
+            "moe_expert_compute",
+            "moe_token_unperm",
+            "mla_qkv_gen",
+            "mla_inference_adjust",
+            "mla_attention",
+            "mla_output",
+            "moe_router_input_jitter",
+            "moe_router_gating",
+            "moe_router_routing",
+            "experts_te_grouped_mlp_fc1",
+            "experts_te_grouped_mlp_activation",
+            "experts_te_grouped_mlp_fc2",
+            "experts_shared_expert_pre_comm",
+            "experts_shared_expert_fc1_act",
+            "experts_shared_expert_fc2",
+            "experts_shared_expert_post_comm",
+            "backward_grad_prep",
+            "backward_model_compute",
+            "backward_grad_collect",
+            "backward_mla_forward",
+            "backward_moe_routing",
+            "backward_moe_token_perm",
+            "backward_moe_expert_compute",
+            "backward_moe_token_unperm",
+            "backward_mla_qkv_gen",
+            "backward_mla_inference_adjust",
+            "backward_mla_attention",
+            "backward_mla_output",
+            "backward_moe_router_input_jitter",
+            "backward_moe_router_gating",
+            "backward_moe_router_routing",
+            "backward_experts_te_grouped_mlp_fc1",
+            "backward_experts_te_grouped_mlp_activation",
+            "backward_experts_te_grouped_mlp_fc2",
+            "backward_experts_shared_expert_pre_comm",
+            "backward_experts_shared_expert_fc1_act",
+            "backward_experts_shared_expert_fc2",
+            "backward_experts_shared_expert_post_comm"
+        ]
+
+        # 提取剩余列（排除固定列）
+        remaining_columns = [col for col in pivot_result.columns if col not in fixed_columns]
+
+        # 计算剩余列的总和（处理 NaN）
+        sum_values = pivot_result[remaining_columns].fillna(0).sum()
+
+        # 对剩余列按总和降序排序（总和相同按列名字典序）
+        sorted_remaining = sum_values.sort_values(
+            ascending=False,
+        ).index.tolist()
+
+        # 合并固定列和排序后的剩余列
+        sorted_columns = fixed_columns + sorted_remaining
+
+        # 按新列顺序重组 DataFrame
+        pivot_result = pivot_result[sorted_columns]
+
+        return pivot_result, result

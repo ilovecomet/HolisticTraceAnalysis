@@ -612,7 +612,9 @@ class Trace:
         return parse_trace_dict(trace_filepath)
 
     def write_raw_trace(self, output_file: str, trace_contents: Dict[str, Any]) -> None:
-        with gzip.open(output_file, "wt") as fp:
+        if output_file.endswith(".json"):
+            output_file = "{}.gz".format(output_file)
+        with gzip.open(output_file, "wt", encoding="utf-8") as fp:
             json.dump(trace_contents, fp, indent=2)
 
     def _normalize_trace_filenames(self) -> None:

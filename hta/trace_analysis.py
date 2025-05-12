@@ -782,3 +782,10 @@ class TraceAnalysis:
                 A dataframe containing the noncomputation computation overlap percentage for each rank.
         """
         return ForwardStageAnalysis.get_forward_compute_stage_analysis(self.t, visualize)
+
+    def get_user_annotation_temporal_breakdown(
+            self,
+    ) -> (pd.DataFrame, pd.DataFrame):
+        return BreakdownAnalysis.get_user_annotation_temporal_breakdown(
+            self.t
+        )

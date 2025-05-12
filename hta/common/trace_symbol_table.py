@@ -139,6 +139,7 @@ class TraceSymbolTable:
         cudaLaunchKernel_id = self.sym_index.get("cudaLaunchKernel", self.NULL)
         cudaLaunchKernelExC_id = self.sym_index.get("cudaLaunchKernelExC", self.NULL)
         cuLaunchKernel_id = self.sym_index.get("cuLaunchKernel", self.NULL)
+        cuLaunchKernelEx_id = self.sym_index.get("cuLaunchKernelEx", self.NULL)
         cudaMemcpyAsync_id = self.sym_index.get("cudaMemcpyAsync", self.NULL)
         cudaMemsetAsync_id = self.sym_index.get("cudaMemsetAsync", self.NULL)
         mtiaLaunchKernel_id = self.sym_index.get(
@@ -147,7 +148,7 @@ class TraceSymbolTable:
         return (
             f"((name == {cudaMemsetAsync_id}) or (name == {cudaMemcpyAsync_id}) or "
             f" (name == {cudaLaunchKernel_id}) or (name == {cudaLaunchKernelExC_id})"
-            f" or (name == {cuLaunchKernel_id}) or (name == {mtiaLaunchKernel_id})) and (index_correlation > 0)"
+            f" or (name == {cuLaunchKernel_id}) or (name == {cuLaunchKernelEx_id}) or (name == {mtiaLaunchKernel_id})) and (index_correlation > 0)"
         )
 
 
