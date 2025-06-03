@@ -352,6 +352,8 @@ class CPGraph(nx.DiGraph):
             self.node_list[end_node].ev_idx
         )
 
+    def get_weight_for_edge(self, edge: CPEdge):
+        return self.node_list[edge.end].ts - self.node_list[edge.begin].ts
     def get_event_attribution_for_edge(self, edge: CPEdge) -> Optional[int]:
         """Helper to look up event attributed to an edge
         Args:
@@ -1065,6 +1067,7 @@ class CPGraph(nx.DiGraph):
 
             edge_added = False
             launch_delay_added = False
+            kernel_delay_added = False
 
             # Check if we need to sync between two kernels
             if kernel_sync_index is not None:
@@ -1139,6 +1142,7 @@ class CPGraph(nx.DiGraph):
                 )
                 self._attribute_edge(e, -1)
                 edge_added = True
+                kernel_delay_added = True
 
             if not edge_added:
                 # Neither of Sync, kernel-kernel or kernel launch edges were added
@@ -1157,6 +1161,12 @@ class CPGraph(nx.DiGraph):
                 self._add_kernel_launch_delay_edge(
                     runtime_index, start_node, zero_weight=True
                 )
+            if not kernel_delay_added and last_node.get(stream) is not None:
+                e = self._add_edge_helper(
+                    last_node[stream], start_node, type=CPEdgeType.KERNEL_KERNEL_DELAY,
+                    zero_weight=True
+                )
+                self._attribute_edge(e, -1)
 
             last_node[stream] = end_node
 
@@ -1310,6 +1320,7 @@ class CPGraph(nx.DiGraph):
             return {
                 "event_idx": self.get_event_attribution_for_edge(e),
                 "duration": e.weight,
+                "duration_fake": self.get_weight_for_edge(e),
                 "type": str(e.type.value),
             }
 
@@ -1319,7 +1330,7 @@ class CPGraph(nx.DiGraph):
 
         edge_events_df = pd.merge(
             edge_df,
-            trace_df[["s_name", "cat", "pid", "tid", "stream", "index"]],
+            trace_df[["s_name", "s_cat", "pid", "tid", "stream", "index"]],
             left_on="event_idx",
             right_on="index",
             how="left",
